@@ -4,7 +4,7 @@ from launch_ros.actions import Node
 def generate_launch_description():
     return LaunchDescription([
         Node(
-            package='patchworkpp',   # 패키지명에 맞게
+            package='navi_object_detection',   # 패키지명에 맞게
             executable='obb_extractor_node',
             name='obb_extractor_node',
             output='screen',

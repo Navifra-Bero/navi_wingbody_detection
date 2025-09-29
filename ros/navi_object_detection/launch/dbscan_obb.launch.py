@@ -4,7 +4,7 @@ from launch_ros.actions import Node
 def generate_launch_description():
     return LaunchDescription([
         Node(
-            package="patchworkpp",
+            package="navi_object_detection",
             executable="dbscan_obb.py",
             name="dbscan_obb_node",
             output="screen",

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "patchworkpp/lshaped_fitting.hpp" // 새로 만든 헤더파일 include
+#include "navi_object_detection/lshaped_fitting.hpp" // 새로 만든 헤더파일 include
 
 #include <rclcpp/rclcpp.hpp>
 #include <memory>

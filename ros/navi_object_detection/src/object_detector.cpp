@@ -1,4 +1,4 @@
-#include "patchworkpp/object_detector.hpp"
+#include "navi_object_detection/object_detector.hpp"
 
 #include <sensor_msgs/msg/point_cloud2.hpp>
 #include <visualization_msgs/msg/marker_array.hpp>

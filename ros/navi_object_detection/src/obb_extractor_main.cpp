@@ -1,5 +1,5 @@
 #include <rclcpp/rclcpp.hpp>
-#include "patchworkpp/object_detector.hpp"
+#include "navi_object_detection/object_detector.hpp"
 
 int main(int argc, char** argv) {
   rclcpp::init(argc, argv);
