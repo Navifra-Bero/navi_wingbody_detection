@@ -39,12 +39,6 @@ include_directories(
   ${EIGEN3_INCLUDE_DIRS}
 )
 
-# -------------------------------
-# OBB 실행 노드 (standalone)
-# -------------------------------
-# ※ object_detector.cpp 안에 rclcpp_components 매크로/헤더 포함이 남아있다면 지워주세요.
-#    (예: rclcpp_components/register_node_macro.hpp, RCLCPP_COMPONENTS_REGISTER_NODE(...))
-
 add_executable(obb_extractor_node
   src/obb_extractor_main.cpp
   src/object_detector.cpp
@@ -69,6 +63,29 @@ target_link_libraries(obb_extractor_node
 install(TARGETS obb_extractor_node
   RUNTIME DESTINATION lib/${PROJECT_NAME}
 )
+
+# tracker
+# add_library(obb_sort_tracker_component SHARED
+#   src/object_tracker.cpp
+# )
+# target_compile_features(obb_sort_tracker_component PUBLIC cxx_std_17)
+# ament_target_dependencies(obb_sort_tracker_component
+#   rclcpp rclcpp_components visualization_msgs
+# )
+# target_include_directories(obb_sort_tracker_component PUBLIC
+#   ${CMAKE_CURRENT_SOURCE_DIR}/include
+# )
+# rclcpp_components_register_node(obb_sort_tracker_component
+#   PLUGIN "navi_tracking::ObjectTrackerNode"
+#   EXECUTABLE obb_sort_tracker_node
+# )
+# install(TARGETS obb_sort_tracker_component
+#   LIBRARY DESTINATION lib
+#   RUNTIME DESTINATION lib/${PROJECT_NAME}
+# )
+# install(DIRECTORY launch/
+#   DESTINATION share/${PROJECT_NAME}/launch
+# )
 
 # 파이썬 스크립트(있다면)
 install(PROGRAMS
