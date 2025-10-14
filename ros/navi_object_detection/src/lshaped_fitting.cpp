@@ -7,7 +7,8 @@
 
 LShapedFIT::LShapedFIT() {
     dtheta_deg_for_search_ = 1.0;
-    criterion_ = Criterion::VARIANCE;
+    criterion_ = Criterion::INLIER; // 기본 기준을 INLIER로 변경
+    inlier_threshold_ = 0.1; // 10cm, 내점 거리 임계값 초기화
 }
 
 double LShapedFIT::calc_var(const std::vector<double>& v) {
@@ -57,6 +58,32 @@ cv::RotatedRect LShapedFIT::calc_rect_contour() {
     return cv::minAreaRect(vertex_pts_);
 }
 
+double LShapedFIT::calc_inlier_criterion(const cv::Mat& c1, const cv::Mat& c2)
+{
+    double min_c1, max_c1, min_c2, max_c2;
+    cv::minMaxLoc(c1, &min_c1, &max_c1);
+    cv::minMaxLoc(c2, &min_c2, &max_c2);
+
+    int inlier_count = 0;
+    for (int i = 0; i < c1.rows; ++i) {
+        // 각 포인트와 4개 경계선까지의 거리 계산
+        double dist_to_c1_min = c1.at<double>(i) - min_c1;
+        double dist_to_c1_max = max_c1 - c1.at<double>(i);
+        double dist_to_c2_min = c2.at<double>(i) - min_c2;
+        double dist_to_c2_max = max_c2 - c2.at<double>(i);
+
+        // 네 거리 중 가장 작은 값 선택
+        double min_dist = std::min({dist_to_c1_min, dist_to_c1_max, dist_to_c2_min, dist_to_c2_max});
+
+        // 거리가 임계값보다 작으면 내점(inlier)으로 카운트
+        if (min_dist < inlier_threshold_) {
+            inlier_count++;
+        }
+    }
+    // 내점의 개수를 점수로 반환 (Maximize)
+    return static_cast<double>(inlier_count);
+}
+
 cv::RotatedRect LShapedFIT::FitBox(const std::vector<cv::Point2f>& points) {
     if (points.size() < 3) return cv::RotatedRect();
     cv::Mat matrix_pts(points.size(), 2, CV_64FC1);
@@ -74,7 +101,54 @@ cv::RotatedRect LShapedFIT::FitBox(const std::vector<cv::Point2f>& points) {
         cv::Mat e2 = (cv::Mat_<double>(1, 2) << -std::sin(theta), std::cos(theta));
         cv::Mat c1 = matrix_pts * e1.t();
         cv::Mat c2 = matrix_pts * e2.t();
-        double score = calc_variances_criterion(c1, c2);
+        double score = 0.0;
+
+        if (criterion_ == Criterion::VARIANCE) {
+            score = calc_variances_criterion(c1, c2);
+        } else if (criterion_ == Criterion::INLIER) {
+            score = calc_inlier_criterion(c1, c2);
+        }
+
+        if (score > max_score) {
+            max_score = score;
+            best_theta = theta;
+        }
+    }
+    double sin_s = sin(best_theta);
+    double cos_s = cos(best_theta);
+    a_ = {cos_s, -sin_s, cos_s, -sin_s};
+    b_ = {sin_s, cos_s, sin_s, cos_s};
+    cv::Mat e1_s = (cv::Mat_<double>(1, 2) << a_[0], b_[0]);
+    cv::Mat e2_s = (cv::Mat_<double>(1, 2) << a_[1], b_[1]);
+    cv::Mat c1_s = matrix_pts * e1_s.t();
+    cv::Mat c2_s = matrix_pts * e2_s.t();
+    double min_c1, max_c1, min_c2, max_c2;
+    cv::minMaxLoc(c1_s, &min_c1, &max_c1);
+    cv::minMaxLoc(c2_s, &min_c2, &max_c2);
+    c_ = {min_c1, min_c2, max_c1, max_c2};
+    return calc_rect_contour();
+}
+
+cv::RotatedRect LShapedFIT::FitBox_2(const std::vector<cv::Point2f>& points) {
+    if (points.size() < 3) return cv::RotatedRect();
+    cv::Mat matrix_pts(points.size(), 2, CV_64FC1);
+    for (size_t i = 0; i < points.size(); ++i) {
+        matrix_pts.at<double>(i, 0) = points[i].x;
+        matrix_pts.at<double>(i, 1) = points[i].y;
+    }
+    double dtheta = dtheta_deg_for_search_ * M_PI / 180.0;
+    double best_theta = 0.0;
+    double max_score = -std::numeric_limits<double>::max();
+    int loop_number = static_cast<int>(std::ceil((M_PI / 2.0) / dtheta));
+    for (int k = 0; k < loop_number; ++k) {
+        double theta = k * dtheta;
+        cv::Mat e1 = (cv::Mat_<double>(1, 2) << std::cos(theta), std::sin(theta));
+        cv::Mat e2 = (cv::Mat_<double>(1, 2) << -std::sin(theta), std::cos(theta));
+        cv::Mat c1 = matrix_pts * e1.t();
+        cv::Mat c2 = matrix_pts * e2.t();
+        double score = 0.0;
+        score = calc_variances_criterion(c1, c2);
+
         if (score > max_score) {
             max_score = score;
             best_theta = theta;

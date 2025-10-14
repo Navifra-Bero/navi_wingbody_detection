@@ -16,6 +16,7 @@
 #include <numeric>
 #include <iostream>
 #include <functional>
+#include <omp.h>
 
 using std::placeholders::_1;
 
@@ -33,7 +34,8 @@ ObjectDetector::ObjectDetector(const rclcpp::NodeOptions& options)
 { 
   lsfitter_ = std::make_unique<LShapedFIT>();
   input_topic_  = this->declare_parameter<std::string>("input_topic",  "/patchworkpp/nonground");
-  marker_topic_ = this->declare_parameter<std::string>("marker_topic", "/obb_markers");
+  marker_topic_ = this->declare_parameter<std::string>("marker_topic", "/object_detection/obb_detection");
+  marker_topic_2 = this->declare_parameter<std::string>("marker_topic_2", "/object_detection/obb_detection_2");
   cluster_topic_ = this->declare_parameter<std::string>("cluster_topic", "/cluster/points");
   cluster_tolerance_ = this->declare_parameter<double>("cluster_tolerance", 0.6);
   min_cluster_size_  = this->declare_parameter<int>("min_cluster_size", 40);
@@ -43,10 +45,10 @@ ObjectDetector::ObjectDetector(const rclcpp::NodeOptions& options)
   max_markers_delete_batch_ = this->declare_parameter<int>("max_markers_delete_batch", 512);
 
   pub_markers_ = this->create_publisher<visualization_msgs::msg::MarkerArray>(marker_topic_, 10);
+  pub_markers_2 = this->create_publisher<visualization_msgs::msg::MarkerArray>(marker_topic_2, 10);
   pub_clusters_ = this->create_publisher<sensor_msgs::msg::PointCloud2>(cluster_topic_, 10);
   sub_cloud_   = this->create_subscription<sensor_msgs::msg::PointCloud2>(
       input_topic_, rclcpp::SensorDataQoS(),
-      // 네임스페이스 문제 수정: std::bind(..., _1) -> std::bind(..., std::placeholders::_1)
       std::bind(&ObjectDetector::cloudCallback, this, _1));
 
   RCLCPP_INFO(this->get_logger(),
@@ -65,13 +67,13 @@ void ObjectDetector::cloudCallback(const sensor_msgs::msg::PointCloud2::SharedPt
   std::vector<int> idx;
   pcl::removeNaNFromPointCloud(*cloud, *cloud, idx);
   if (cloud->empty()) {
-    // clear previous markers if any
     if (last_marker_count_ > 0) {
       visualization_msgs::msg::MarkerArray arr;
       const auto& hdr = msg->header;
       const std::size_t to_del = std::min<std::size_t>(last_marker_count_, max_markers_delete_batch_);
       for (std::size_t i = 0; i < to_del; ++i) arr.markers.push_back(makeDeleteMarker(hdr, static_cast<int>(i)));
       pub_markers_->publish(arr);
+      pub_markers_2->publish(arr);
       last_marker_count_ = 0;
     }
     return;
@@ -90,106 +92,123 @@ void ObjectDetector::cloudCallback(const sensor_msgs::msg::PointCloud2::SharedPt
   ec.setInputCloud(cloud);
   ec.extract(cluster_indices);
 
-  pcl::PointCloud<pcl::PointXYZRGB>::Ptr clusters_rgb(new pcl::PointCloud<pcl::PointXYZRGB>());
-  clusters_rgb->reserve(cloud->size());
-
+  // 결과물을 스레드 안전하게 수집하기 위한 컨테이너와 뮤텍스
   visualization_msgs::msg::MarkerArray marr;
-  marr.markers.reserve(cluster_indices.size());
+  visualization_msgs::msg::MarkerArray marr_2;
+  pcl::PointCloud<pcl::PointXYZRGB>::Ptr clusters_rgb(new pcl::PointCloud<pcl::PointXYZRGB>());
+  std::mutex result_mutex;
 
-  int id = 0;
-  // object_detector.cpp의 cloudCallback 함수 내부 for 루프
+  // --- OpenMP를 이용한 병렬 처리 for 루프 ---
+  // range-based for 대신 인덱스 기반 for 루프로 변경
+  #pragma omp parallel for
+  for (size_t i = 0; i < cluster_indices.size(); ++i) {
+    const auto& indices = cluster_indices[i];
+    if (indices.indices.empty()) continue; // C++17에서는 [[likely]] 사용 가능
 
-  for (const auto& indices : cluster_indices) {
-    if (indices.indices.empty()) continue;
+    // --- 스레드별 로컬 변수 ---
+    // LShapedFIT 객체는 멤버 변수를 가지므로 스레드별로 독립적인 인스턴스를 생성해야 함
+    LShapedFIT local_lsfitter; 
+    
+    // 이 스레드에서 처리할 결과를 담을 로컬 컨테이너
+    visualization_msgs::msg::Marker local_mk, local_mk_2;
+    pcl::PointCloud<pcl::PointXYZRGB> local_clusters_rgb;
+    bool box1_valid = false, box2_valid = false;
+    // --- ---
 
-    // build cluster cloud & convert to cv::Point2f
     std::vector<cv::Point2f> cluster_points_cv;
     cluster_points_cv.reserve(indices.indices.size());
     float z_min = std::numeric_limits<float>::infinity();
     float z_max = -std::numeric_limits<float>::infinity();
 
-    for (int i : indices.indices) {
-      const auto& p = cloud->points[i];
+    for (int idx : indices.indices) {
+      const auto& p = cloud->points[idx];
       cluster_points_cv.emplace_back(p.x, p.y);
       if (p.z < z_min) z_min = p.z;
       if (p.z > z_max) z_max = p.z;
-    }
-    
-    // 이 클러스터의 RGB 포인트 클라우드 생성 (시각화용)
-    for (const auto& p_idx : indices.indices) {
-        const auto& p = cloud->points[p_idx];
-        pcl::PointXYZRGB pr;
-        pr.x = p.x; pr.y = p.y; pr.z = p.z;
-        pr.r = 255; pr.g = 0; pr.b = 0; // 빨간색
-        clusters_rgb->points.push_back(pr);
-    }
-    
-    // L-Shape Fitting 실행
-    cv::RotatedRect box = lsfitter_->FitBox(cluster_points_cv);
-    
-    if (box.size.width <= 0 || box.size.height <= 0) continue;
 
-    const float size_z = std::max(0.01f, z_max - z_min);
-    if (box.size.width < min_box_xy_ && box.size.height < min_box_xy_) {
-      continue;
+      pcl::PointXYZRGB pr;
+      pr.x = p.x; pr.y = p.y; pr.z = p.z;
+      pr.r = 255; pr.g = 0; pr.b = 0;
+      local_clusters_rgb.points.push_back(pr);
     }
+    
+    cv::RotatedRect box = local_lsfitter.FitBox(cluster_points_cv);
+    cv::RotatedRect box_2 = local_lsfitter.FitBox_2(cluster_points_cv);
+    
+    const float size_z = std::max(0.01f, z_max - z_min);
     const float z_center = 0.5f * (z_min + z_max);
 
-    // === marker 생성 (수정된 부분) ===
-    visualization_msgs::msg::Marker mk;
-    mk.header = msg->header;
-    mk.ns = "obb";
-    mk.id = id++;
-    mk.type = visualization_msgs::msg::Marker::CUBE;
-    mk.action = visualization_msgs::msg::Marker::ADD;
+    if (box.size.width > 0 && box.size.height > 0 && !(box.size.width < min_box_xy_ && box.size.height < min_box_xy_)) {
+      local_mk.header = msg->header;
+      local_mk.ns = "obb_inlier";
+      local_mk.id = static_cast<int>(i); // ID를 루프 인덱스로 설정
+      local_mk.type = visualization_msgs::msg::Marker::CUBE;
+      local_mk.action = visualization_msgs::msg::Marker::ADD;
+      local_mk.pose.position.x = box.center.x;
+      local_mk.pose.position.y = box.center.y;
+      local_mk.pose.position.z = z_center;
+      tf2::Quaternion q;
+      q.setRPY(0, 0, box.angle * M_PI / 180.0);
+      local_mk.pose.orientation = tf2::toMsg(q);
+      local_mk.scale.x = box.size.width;
+      local_mk.scale.y = box.size.height;
+      local_mk.scale.z = size_z;
+      local_mk.color.r = 1.0; local_mk.color.g = 0.0; local_mk.color.b = 0.0; local_mk.color.a = 0.4; // 빨간색
+      local_mk.lifetime = rclcpp::Duration::from_seconds(marker_lifetime_);
+      box1_valid = true;
+    }
 
-    // cv::RotatedRect 결과(box)를 marker pose에 할당
-    mk.pose.position.x = box.center.x;
-    mk.pose.position.y = box.center.y;
-    mk.pose.position.z = z_center;
+    if (box_2.size.width > 0 && box_2.size.height > 0 && !(box_2.size.width < min_box_xy_ && box_2.size.height < min_box_xy_)) {
+      local_mk_2.header = msg->header;
+      local_mk_2.ns = "obb_variance";
+      local_mk_2.id = static_cast<int>(i); // ID를 루프 인덱스로 설정
+      local_mk_2.type = visualization_msgs::msg::Marker::CUBE;
+      local_mk_2.action = visualization_msgs::msg::Marker::ADD;
+      local_mk_2.pose.position.x = box_2.center.x;
+      local_mk_2.pose.position.y = box_2.center.y;
+      local_mk_2.pose.position.z = z_center;
+      tf2::Quaternion q;
+      q.setRPY(0, 0, box_2.angle * M_PI / 180.0);
+      local_mk_2.pose.orientation = tf2::toMsg(q);
+      local_mk_2.scale.x = box_2.size.width;
+      local_mk_2.scale.y = box_2.size.height;
+      local_mk_2.scale.z = size_z;
+      local_mk_2.color.r = 0.0; local_mk_2.color.g = 0.0; local_mk_2.color.b = 1.0; local_mk_2.color.a = 0.4; // 파란색
+      local_mk_2.lifetime = rclcpp::Duration::from_seconds(marker_lifetime_);
+      box2_valid = true;
+    }
 
-    tf2::Quaternion q;
-    q.setRPY(0, 0, box.angle * M_PI / 180.0); // OpenCV 각도(degree)를 ROS quaternion으로 변환
-    mk.pose.orientation = tf2::toMsg(q);
-
-    // cv::RotatedRect 결과(box)를 marker scale에 할당
-    mk.scale.x = box.size.width;
-    mk.scale.y = box.size.height;
-    mk.scale.z = size_z;
-
-    mk.color.r = 1.0;
-    mk.color.g = 1.0;
-    mk.color.b = 1.0;
-    mk.color.a = 0.4;
-
-    mk.lifetime = rclcpp::Duration::from_seconds(marker_lifetime_);
-
-    marr.markers.push_back(mk);
+    // --- 모든 계산이 끝난 후, 한 번만 lock을 걸어 공유 데이터에 결과 추가 ---
+    {
+      std::lock_guard<std::mutex> lock(result_mutex);
+      if(box1_valid) marr.markers.push_back(local_mk);
+      if(box2_valid) marr_2.markers.push_back(local_mk_2);
+      clusters_rgb->points.insert(clusters_rgb->points.end(), local_clusters_rgb.points.begin(), local_clusters_rgb.points.end());
+    }
   }
 
   // delete stale markers
-  if (id < static_cast<int>(last_marker_count_)) {
+  size_t current_marker_count = std::max(marr.markers.size(), marr_2.markers.size());
+  if (current_marker_count < last_marker_count_) {
     const auto& hdr = msg->header;
-    for (int k = id; k < static_cast<int>(last_marker_count_); ++k) {
-      marr.markers.push_back(makeDeleteMarker(hdr, k));
+    for (size_t k = current_marker_count; k < last_marker_count_; ++k) {
+      marr.markers.push_back(makeDeleteMarker(hdr, static_cast<int>(k)));
+      marr_2.markers.push_back(makeDeleteMarker(hdr, static_cast<int>(k)));
     }
   }
-  last_marker_count_ = static_cast<std::size_t>(id);
+  last_marker_count_ = current_marker_count;
 
   // publish
-  {
-    std::lock_guard<std::mutex> lk(pub_mutex_);
-    pub_markers_->publish(marr);
-  }
+  pub_markers_->publish(marr);
+  pub_markers_2->publish(marr_2);
 
   if (!clusters_rgb->points.empty()) {
     clusters_rgb->width  = static_cast<uint32_t>(clusters_rgb->points.size());
     clusters_rgb->height = 1;
     clusters_rgb->is_dense = true;
-
     sensor_msgs::msg::PointCloud2 out;
     pcl::toROSMsg(*clusters_rgb, out);
-    out.header = msg->header;  // 입력과 같은 frame_id / stamp
+    out.header = msg->header;
     pub_clusters_->publish(out);
   }
 }

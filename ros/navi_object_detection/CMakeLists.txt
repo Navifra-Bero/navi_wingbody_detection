@@ -8,13 +8,13 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 # Patchwork++ core (그대로)
 set(PARENT_PROJECT_NAME navi_object_detection)
 set(TARGET_NAME ground_seg_cores)
-if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/../../cpp/)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../../cpp ${CMAKE_CURRENT_BINARY_DIR}/patchworkpp_cpp)
-else()
-  cmake_minimum_required(VERSION 3.18)
-  message(STATUS "Performing out-of-tree build, fetching Patchwork++ v${CMAKE_PROJECT_VERSION} Release from Github")
-  include(FetchContent)
-endif()
+# if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/../../cpp/)
+#   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../../cpp ${CMAKE_CURRENT_BINARY_DIR}/patchworkpp_cpp)
+# else()
+#   cmake_minimum_required(VERSION 3.18)
+#   message(STATUS "Performing out-of-tree build, fetching Patchwork++ v${CMAKE_PROJECT_VERSION} Release from Github")
+#   include(FetchContent)
+# endif()
 
 find_package(ament_cmake REQUIRED)
 find_package(nav_msgs REQUIRED)
@@ -32,18 +32,14 @@ find_package(pcl_conversions REQUIRED)
 find_package(PCL REQUIRED COMPONENTS common io filters segmentation features kdtree)
 find_package(Eigen3 REQUIRED)
 find_package(OpenCV REQUIRED)
+find_package(std_msgs REQUIRED)
+find_package(OpenMP REQUIRED)
 
 include_directories(
   ${CMAKE_CURRENT_SOURCE_DIR}/include
   ${PCL_INCLUDE_DIRS}
   ${EIGEN3_INCLUDE_DIRS}
 )
-
-# -------------------------------
-# OBB 실행 노드 (standalone)
-# -------------------------------
-# ※ object_detector.cpp 안에 rclcpp_components 매크로/헤더 포함이 남아있다면 지워주세요.
-#    (예: rclcpp_components/register_node_macro.hpp, RCLCPP_COMPONENTS_REGISTER_NODE(...))
 
 add_executable(obb_extractor_node
   src/obb_extractor_main.cpp
@@ -63,10 +59,33 @@ ament_target_dependencies(obb_extractor_node
 )
 target_link_libraries(obb_extractor_node
   ${PCL_LIBRARIES}
-  ${OpenCV_LIBS} # OpenCV 라이브러리 링크 추가
+  ${OpenCV_LIBS}
+  OpenMP::OpenMP_CXX
 )
 
 install(TARGETS obb_extractor_node
+  RUNTIME DESTINATION lib/${PROJECT_NAME}
+)
+
+
+add_executable(object_tracker_node
+  src/obb_tracker_main.cpp
+  src/object_tracker.cpp
+  src/sort_tracker.cpp
+)
+target_compile_features(object_tracker_node PUBLIC cxx_std_17)
+target_include_directories(object_tracker_node PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+ament_target_dependencies(object_tracker_node
+  "rclcpp"
+  "visualization_msgs"
+  "tf2"
+  "tf2_geometry_msgs"
+)
+target_link_libraries(object_tracker_node
+  ${OpenCV_LIBS}
+)
+
+install(TARGETS object_tracker_node
   RUNTIME DESTINATION lib/${PROJECT_NAME}
 )
 

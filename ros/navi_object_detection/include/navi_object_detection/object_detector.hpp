@@ -29,6 +29,7 @@ private:
   // params
   std::string input_topic_;
   std::string marker_topic_;
+  std::string marker_topic_2;
   std::string cluster_topic_;
   double cluster_tolerance_;
   int    min_cluster_size_;
@@ -40,6 +41,7 @@ private:
   // --- 여기부터 ROS2 메시지 타입 문법 수정 ---
   rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr sub_cloud_;
   rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pub_markers_;
+  rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pub_markers_2;
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pub_clusters_;
   // --- 수정 끝 ---
 
