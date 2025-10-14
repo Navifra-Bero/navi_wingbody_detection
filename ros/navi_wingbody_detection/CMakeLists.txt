@@ -1,12 +1,12 @@
 cmake_minimum_required(VERSION 3.16...3.26)
-project(navi_object_detection VERSION 1.0.4 LANGUAGES CXX)
+project(navi_wingbody_detection VERSION 1.0.4 LANGUAGES CXX)
 
 set(ignore ${CATKIN_INSTALL_INTO_PREFIX_ROOT})
 set(CMAKE_BUILD_TYPE Release)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # Patchwork++ core (그대로)
-set(PARENT_PROJECT_NAME navi_object_detection)
+set(PARENT_PROJECT_NAME navi_wingbody_detection)
 set(TARGET_NAME ground_seg_cores)
 # if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/../../cpp/)
 #   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../../cpp ${CMAKE_CURRENT_BINARY_DIR}/patchworkpp_cpp)
@@ -92,6 +92,7 @@ install(TARGETS object_tracker_node
 # 파이썬 스크립트(있다면)
 install(PROGRAMS
   scripts/dbscan_obb.py
+  scripts/comparer_node.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

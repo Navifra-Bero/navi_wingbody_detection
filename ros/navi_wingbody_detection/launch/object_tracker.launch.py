@@ -4,7 +4,7 @@ from launch_ros.actions import Node
 def generate_launch_description():
     return LaunchDescription([
         Node(
-            package='navi_object_detection',
+            package='navi_wingbody_detection',
             executable='object_tracker_node',
             name='object_tracker',
             output='screen',

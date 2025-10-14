@@ -1,8 +1,8 @@
 <?xml version="1.0"?>
 <package format="3">
-  <name>navi_object_detection</name>
+  <name>navi_wingbody_detection</name>
   <version>0.1.0</version>
-  <description>navi_object_detection ROS 2</description>
+  <description>navi_wingbody_detection ROS 2</description>
   <maintainer email="bero@navifra.com">KyeongBeen Park</maintainer>
   <license>GPL-3.0</license>
 

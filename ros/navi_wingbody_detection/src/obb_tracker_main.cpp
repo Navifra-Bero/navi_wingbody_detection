@@ -1,4 +1,4 @@
-#include "navi_object_detection/object_tracker.hpp" // include 경로 수정
+#include "navi_wingbody_detection/object_tracker.hpp" // include 경로 수정
 #include <rclcpp/rclcpp.hpp>
 
 int main(int argc, char** argv) {

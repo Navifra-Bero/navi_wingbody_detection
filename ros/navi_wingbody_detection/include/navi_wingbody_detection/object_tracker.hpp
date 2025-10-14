@@ -1,6 +1,6 @@
 #pragma once
 
-#include "navi_object_detection/sort_tracker.hpp" // 새로 만든 헤더파일 include
+#include "navi_wingbody_detection/sort_tracker.hpp" // 새로 만든 헤더파일 include
 
 #include <rclcpp/rclcpp.hpp>
 #include <visualization_msgs/msg/marker_array.hpp>
