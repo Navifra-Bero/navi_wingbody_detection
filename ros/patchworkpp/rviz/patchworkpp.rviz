@@ -34,7 +34,8 @@ Panels:
     Name: Time
     SyncMode: 0
     SyncSource: nonground
-  - ~
+  - Class: navifra_rviz_panel/DemoPanel
+    Name: DemoPanel
 Visualization Manager:
   Class: ""
   Displays:
