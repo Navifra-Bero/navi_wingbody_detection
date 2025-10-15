@@ -92,7 +92,8 @@ install(TARGETS object_tracker_node
 # 파이썬 스크립트(있다면)
 install(PROGRAMS
   scripts/dbscan_obb.py
-  scripts/comparer_node.py
+  scripts/imu_viz_node.py
+  scripts/obb_angle_error_node.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
