@@ -18,6 +18,11 @@
 
 #include <opencv2/core.hpp>
 
+// 추가 include
+#include <geometry_msgs/msg/pose_array.hpp>
+#include <geometry_msgs/msg/pose.hpp>
+
+
 namespace navi_detection {
 
 class ObjectDetector : public rclcpp::Node {
@@ -42,13 +47,18 @@ private:
   std::thread worker_;
 
   // === L-shape Fitter ===
-  std::unique_ptr<LShapedFIT> lsfitter_;
+  double lshape_dtheta_deg_;
+  double lshape_inlier_threshold_;
+  double lshape_min_dist_nearest_;
 
   // === 파라미터 ===
   std::string input_topic_;
   std::string marker_topic_;
   std::string marker_topic_2;
+  std::string marker_topic_3;
+  std::string marker_topic_4;
   std::string cluster_topic_;
+
   double cluster_tolerance_;
   int    min_cluster_size_;
   int    max_cluster_size_;
@@ -61,10 +71,24 @@ private:
   bool   cluster_reliable_;  // Cluster pub Reliability
   int    cluster_depth_;     // Cluster pub KeepLast depth
 
+  // 클래스 멤버 추가 (토픽명)
+  std::string poses_topic_;
+  std::string poses_topic_2_;
+  std::string poses_topic_3_;
+  std::string poses_topic_4_;
+
+  // 클래스 멤버 추가 (퍼블리셔)
+  rclcpp::Publisher<geometry_msgs::msg::PoseArray>::SharedPtr pub_poses_;
+  rclcpp::Publisher<geometry_msgs::msg::PoseArray>::SharedPtr pub_poses_2_;
+  rclcpp::Publisher<geometry_msgs::msg::PoseArray>::SharedPtr pub_poses_3_;
+  rclcpp::Publisher<geometry_msgs::msg::PoseArray>::SharedPtr pub_poses_4_;
+
   // === ROS2 I/O ===
   rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr sub_cloud_;
   rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pub_markers_;
   rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pub_markers_2;
+  rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pub_markers_3;
+  rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pub_markers_4;
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pub_clusters_;
 
   // === 상태 ===
