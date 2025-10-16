@@ -41,7 +41,7 @@ include_directories(
 
 
 # 헤더 설치(선택)
-install(DIRECTORY include/ DESTINATION include/)
+# install(DIRECTORY include/ DESTINATION include/)
 
 # ROS 2 node. gseg: Abbrev. of `g`round `seg`mentation
 add_library(gseg_component SHARED src/GroundSegmentationServer.cpp)
